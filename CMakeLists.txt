@@ -57,6 +57,7 @@ endif()
 
 set(rayol_sources
     src/rayol.cpp
+    src/ui/imgui_layer.cpp
 )
 
 add_executable(rayol ${rayol_sources})
