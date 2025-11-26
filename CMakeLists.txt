@@ -61,6 +61,11 @@ set(rayol_sources
 
 add_executable(rayol ${rayol_sources})
 
+target_compile_definitions(rayol PRIVATE
+    RAYOL_ENABLE_VULKAN=$<BOOL:${RAYOL_ENABLE_VULKAN}>
+    RAYOL_USE_IMGUI=$<BOOL:${RAYOL_USE_IMGUI}>
+)
+
 target_link_libraries(rayol PRIVATE SDL3::SDL3)
 if(TARGET SDL3::SDL3main)
     target_link_libraries(rayol PRIVATE SDL3::SDL3main)
