@@ -3,7 +3,6 @@
 #include <SDL3/SDL_vulkan.h>
 #include <cstdint>
 #include <vulkan/vulkan.h>
-#include <vector>
 #endif
 #include <iostream>
 
@@ -12,7 +11,7 @@ namespace rayol {
 class App {
 public:
     int run() {
-        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
             std::cerr << "SDL initialization failed: " << SDL_GetError() << std::endl;
             return 1;
         }
@@ -61,14 +60,9 @@ private:
 #if RAYOL_ENABLE_VULKAN
     bool init_vulkan(SDL_Window* window) {
         uint32_t extension_count = 0;
-        if (!SDL_Vulkan_GetInstanceExtensions(&extension_count, nullptr) || extension_count == 0) {
+        const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extension_count);
+        if (!extensions || extension_count == 0) {
             std::cerr << "Failed to query Vulkan instance extensions: " << SDL_GetError() << std::endl;
-            return false;
-        }
-
-        std::vector<const char*> extensions(extension_count);
-        if (!SDL_Vulkan_GetInstanceExtensions(&extension_count, extensions.data())) {
-            std::cerr << "Failed to fetch Vulkan instance extensions: " << SDL_GetError() << std::endl;
             return false;
         }
 
@@ -83,15 +77,15 @@ private:
         VkInstanceCreateInfo create_info{};
         create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         create_info.pApplicationInfo = &app_info;
-        create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        create_info.ppEnabledExtensionNames = extensions.data();
+        create_info.enabledExtensionCount = extension_count;
+        create_info.ppEnabledExtensionNames = extensions;
 
         if (vkCreateInstance(&create_info, nullptr, &instance_) != VK_SUCCESS) {
             std::cerr << "vkCreateInstance failed." << std::endl;
             return false;
         }
 
-        if (!SDL_Vulkan_CreateSurface(window, instance_, &surface_)) {
+        if (!SDL_Vulkan_CreateSurface(window, instance_, nullptr, &surface_)) {
             std::cerr << "SDL_Vulkan_CreateSurface failed: " << SDL_GetError() << std::endl;
             vkDestroyInstance(instance_, nullptr);
             instance_ = VK_NULL_HANDLE;
