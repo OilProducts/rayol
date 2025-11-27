@@ -57,10 +57,14 @@ endif()
 
 set(rayol_sources
     src/rayol.cpp
+    src/app.cpp
+    src/vulkan/context.cpp
     src/ui/imgui_layer.cpp
 )
 
 add_executable(rayol ${rayol_sources})
+
+target_include_directories(rayol PRIVATE src)
 
 target_compile_definitions(rayol PRIVATE
     RAYOL_ENABLE_VULKAN=$<BOOL:${RAYOL_ENABLE_VULKAN}>
