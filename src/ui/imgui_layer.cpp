@@ -1,6 +1,5 @@
 #include "imgui_layer.h"
 
-#if RAYOL_USE_IMGUI
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -135,5 +134,3 @@ void ImGuiLayer::shutdown() {
 }
 
 }  // namespace rayol
-
-#endif

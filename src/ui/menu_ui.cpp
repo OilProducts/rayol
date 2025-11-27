@@ -1,6 +1,5 @@
 #include "ui/menu_ui.h"
 
-#if RAYOL_USE_IMGUI
 #include <imgui.h>
 
 namespace rayol::ui {
@@ -49,11 +48,3 @@ MenuIntents render_menu_ui(UiState& state) {
 }
 
 }  // namespace rayol::ui
-
-#else
-
-namespace rayol::ui {
-MenuIntents render_menu_ui(UiState&) { return {}; }
-}  // namespace rayol::ui
-
-#endif

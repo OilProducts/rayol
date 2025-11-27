@@ -1,7 +1,6 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-#if RAYOL_ENABLE_VULKAN
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 
@@ -91,5 +90,3 @@ private:
 };
 
 }  // namespace rayol
-
-#endif  // RAYOL_ENABLE_VULKAN

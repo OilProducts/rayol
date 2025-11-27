@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.20)
 project(rayol LANGUAGES CXX)
 
 option(RAYOL_BUNDLE_SDL3 "Download/build SDL3 locally if not found on the system" ON)
-option(RAYOL_ENABLE_VULKAN "Enable Vulkan dependency check" ON)
-option(RAYOL_USE_IMGUI "Build with Dear ImGui UI layer" ON)
 
 include(FetchContent)
 
@@ -24,15 +22,13 @@ if(CMAKE_CONFIGURATION_TYPES)
     endforeach()
 endif()
 
-if(RAYOL_ENABLE_VULKAN)
-    find_package(Vulkan QUIET)
-    if(NOT Vulkan_FOUND)
-        message(FATAL_ERROR "Vulkan SDK not found; install it or set RAYOL_ENABLE_VULKAN=OFF.")
-    endif()
-    find_program(GLSLC glslc)
-    if(NOT GLSLC)
-        message(FATAL_ERROR "glslc not found (part of Vulkan SDK) – required for shader compilation.")
-    endif()
+find_package(Vulkan QUIET)
+if(NOT Vulkan_FOUND)
+    message(FATAL_ERROR "Vulkan SDK not found; install it to build Rayol.")
+endif()
+find_program(GLSLC glslc)
+if(NOT GLSLC)
+    message(FATAL_ERROR "glslc not found (part of Vulkan SDK) – required for shader compilation.")
 endif()
 
 find_package(SDL3 QUIET CONFIG)
@@ -67,47 +63,32 @@ add_executable(rayol ${rayol_sources})
 
 target_include_directories(rayol PRIVATE src)
 
-target_compile_definitions(rayol PRIVATE
-    RAYOL_ENABLE_VULKAN=$<BOOL:${RAYOL_ENABLE_VULKAN}>
-    RAYOL_USE_IMGUI=$<BOOL:${RAYOL_USE_IMGUI}>
-)
-
 target_link_libraries(rayol PRIVATE SDL3::SDL3)
 if(TARGET SDL3::SDL3main)
     target_link_libraries(rayol PRIVATE SDL3::SDL3main)
 endif()
-if(RAYOL_ENABLE_VULKAN)
-    target_link_libraries(rayol PRIVATE Vulkan::Vulkan)
-endif()
+target_link_libraries(rayol PRIVATE Vulkan::Vulkan)
 
-if(RAYOL_USE_IMGUI)
-    if(NOT RAYOL_ENABLE_VULKAN)
-        message(FATAL_ERROR "ImGui backend is configured for Vulkan; enable RAYOL_ENABLE_VULKAN or set RAYOL_USE_IMGUI=OFF.")
-    endif()
-    FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.91.0-docking
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(imgui)
-    add_library(imgui STATIC
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-    )
-    target_include_directories(imgui PUBLIC
-        ${imgui_SOURCE_DIR}
-        ${imgui_SOURCE_DIR}/backends
-    )
-    target_link_libraries(imgui PUBLIC Vulkan::Vulkan SDL3::SDL3)
-    target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_SDL3 SDL_ENABLE_OLD_NAMES)
-    target_link_libraries(rayol PRIVATE imgui)
-    target_compile_definitions(rayol PRIVATE RAYOL_HAS_IMGUI=1)
-else()
-    target_compile_definitions(rayol PRIVATE RAYOL_HAS_IMGUI=0)
-endif()
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.0-docking
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(imgui)
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+target_link_libraries(imgui PUBLIC Vulkan::Vulkan SDL3::SDL3)
+target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_SDL3 SDL_ENABLE_OLD_NAMES)
+target_link_libraries(rayol PRIVATE imgui)

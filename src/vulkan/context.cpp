@@ -1,14 +1,8 @@
 #include "vulkan/context.h"
 
-#if RAYOL_ENABLE_VULKAN
-
 #include <algorithm>
 #include <iostream>
 #include <vector>
-
-#if RAYOL_USE_IMGUI
-#include <imgui.h>
-#endif
 
 namespace rayol {
 
@@ -53,14 +47,12 @@ bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(b
     vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
     vkResetCommandBuffer(command_buffers_[image_index], 0);
 
-#if RAYOL_USE_IMGUI
     if (imgui_layer_) {
         imgui_layer_->begin_frame();
         if (ui_callback) {
             ui_callback(should_close_ui);
         }
     }
-#endif
 
     record_commands(command_buffers_[image_index], image_index);
 
@@ -526,11 +518,9 @@ bool VulkanContext::recreate_swapchain() {
     if (!create_framebuffers()) return false;
     if (!allocate_command_buffers()) return false;
 
-#if RAYOL_USE_IMGUI
     if (imgui_layer_) {
         imgui_layer_->on_swapchain_recreated(render_pass_, min_image_count_);
     }
-#endif
 
     return true;
 }
@@ -555,11 +545,9 @@ void VulkanContext::record_commands(VkCommandBuffer cmd, size_t image_index) {
 
     vkCmdBeginRenderPass(cmd, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-#if RAYOL_USE_IMGUI
     if (imgui_layer_) {
         imgui_layer_->end_frame(cmd, swapchain_extent_);
     }
-#endif
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -606,5 +594,3 @@ VkExtent2D VulkanContext::choose_extent(const VkSurfaceCapabilitiesKHR& capabili
 }
 
 }  // namespace rayol
-
-#endif  // RAYOL_ENABLE_VULKAN

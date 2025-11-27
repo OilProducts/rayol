@@ -2,11 +2,6 @@
 
 namespace rayol::ui {
 
-enum class AppMode {
-    MainMenu,
-    Running,
-};
-
 struct UiState {
     int gfx_quality = 2;       // 0=Low,1=Med,2=High,3=Ultra
     float master_volume = 0.8f;

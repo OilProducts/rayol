@@ -1,11 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-
-#if RAYOL_USE_IMGUI
 #include <vulkan/vulkan.h>
-#include <functional>
-#include <vector>
 
 struct ImGuiContext;
 
@@ -42,32 +38,3 @@ private:
 };
 
 }  // namespace rayol
-
-#else
-
-// No-op stub when ImGui is disabled.
-namespace rayol {
-class ImGuiLayer {
-public:
-    struct InitInfo {
-        SDL_Window* window{};
-        VkInstance instance{};
-        VkPhysicalDevice physical_device{};
-        VkDevice device{};
-        uint32_t queue_family{};
-        VkQueue queue{};
-        VkDescriptorPool descriptor_pool{};
-        uint32_t min_image_count{};
-        VkRenderPass render_pass{};
-    };
-
-    bool init(const InitInfo&) { return true; }
-    void process_event(const SDL_Event&) {}
-    void begin_frame() {}
-    void end_frame(VkCommandBuffer, const VkExtent2D&) {}
-    void shutdown() {}
-    void on_swapchain_recreated(VkRenderPass, uint32_t) {}
-};
-}  // namespace rayol
-
-#endif
