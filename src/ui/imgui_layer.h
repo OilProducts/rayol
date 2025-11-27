@@ -22,15 +22,22 @@ public:
         VkRenderPass render_pass{};        // Render pass compatible with swapchain
     };
 
+    // Initialize ImGui for SDL3 + Vulkan using the provided handles.
     bool init(const InitInfo& info);
+    // Feed SDL events to ImGui (e.g., keyboard/mouse).
     void process_event(const SDL_Event& event);
+    // Start a new ImGui frame.
     void begin_frame();
+    // Render ImGui draw data into the provided command buffer.
     void end_frame(VkCommandBuffer cmd, const VkExtent2D& extent);
+    // Shutdown ImGui and backend bindings.
     void shutdown();
 
+    // Recreate backend resources after the swapchain/render pass changes.
     void on_swapchain_recreated(VkRenderPass new_render_pass, uint32_t min_image_count);
 
 private:
+    // Upload font textures using a transient command buffer.
     bool upload_fonts();
 
     ImGuiContext* context_{nullptr};
