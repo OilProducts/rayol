@@ -2,11 +2,13 @@
 
 #include <SDL3/SDL.h>
 #include <iostream>
+#include <functional>
 
 #if RAYOL_ENABLE_VULKAN
 #include "vulkan/context.h"
 #include "ui/imgui_layer.h"
-#include "ui/demo_ui.h"
+#include "ui/menu_ui.h"
+#include "ui/ui_models.h"
 #if RAYOL_USE_IMGUI
 #include <imgui.h>
 #endif
@@ -36,6 +38,8 @@ int App::run() {
         SDL_Quit();
         return 1;
     }
+
+    Mode mode = Mode::MainMenu;
 
 #if RAYOL_ENABLE_VULKAN
     VulkanContext vk;
@@ -69,6 +73,9 @@ int App::run() {
 #endif
 
     bool running = true;
+#if RAYOL_ENABLE_VULKAN
+    ui::UiState ui_state{};
+#endif
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -82,13 +89,28 @@ int App::run() {
 
 #if RAYOL_ENABLE_VULKAN
         bool ui_requested_exit = false;
+        if (mode == Mode::MainMenu) {
 #if RAYOL_USE_IMGUI
-        auto ui_callback = [&]() -> bool { return ui::render_demo_ui(); };
+            ui::MenuIntents menu_intents{};
+            auto ui_callback = [&](bool& exit_flag) {
+                menu_intents = ui::render_menu_ui(ui_state);
+                exit_flag = exit_flag || menu_intents.exit;
+            };
+            if (!vk.draw_frame(ui_requested_exit, ui_callback)) {
+                running = false;
+            }
+            if (menu_intents.start) {
+                mode = Mode::Running;
+            }
 #else
-        auto ui_callback = [&]() -> bool { return false; };
+            if (!vk.draw_frame(ui_requested_exit, nullptr)) {
+                running = false;
+            }
 #endif
-        if (!vk.draw_frame(ui_requested_exit, ui_callback)) {
-            running = false;
+        } else {  // Mode::Running
+            if (!vk.draw_frame(ui_requested_exit, std::function<void(bool&)>{})) {
+                running = false;
+            }
         }
         if (ui_requested_exit) {
             running = false;

@@ -29,7 +29,7 @@ bool VulkanContext::init(SDL_Window* window) {
     return true;
 }
 
-bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<bool()>& ui_callback) {
+bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback) {
     vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
 
     uint32_t image_index = 0;
@@ -57,7 +57,7 @@ bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<bool()
     if (imgui_layer_) {
         imgui_layer_->begin_frame();
         if (ui_callback) {
-            should_close_ui = ui_callback();
+            ui_callback(should_close_ui);
         }
     }
 #endif

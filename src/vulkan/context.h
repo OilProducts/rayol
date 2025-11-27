@@ -20,7 +20,7 @@ class VulkanContext {
 public:
     bool init(SDL_Window* window);
     void set_imgui_layer(ImGuiLayer* layer) { imgui_layer_ = layer; }
-    bool draw_frame(bool& should_close_ui, const std::function<bool()>& ui_callback);
+    bool draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback);
     void shutdown();
 
     VkRenderPass render_pass() const { return render_pass_; }

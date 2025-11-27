@@ -60,7 +60,7 @@ set(rayol_sources
     src/app.cpp
     src/vulkan/context.cpp
     src/ui/imgui_layer.cpp
-    src/ui/demo_ui.cpp
+    src/ui/menu_ui.cpp
 )
 
 add_executable(rayol ${rayol_sources})
