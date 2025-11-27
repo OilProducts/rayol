@@ -6,6 +6,7 @@ namespace rayol {
 
 CommandPool::~CommandPool() = default;
 
+// Create a resettable command pool for the given queue family.
 bool CommandPool::init(VkDevice device, uint32_t queue_family) {
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -19,6 +20,7 @@ bool CommandPool::init(VkDevice device, uint32_t queue_family) {
     return true;
 }
 
+// Free command buffers and destroy pool.
 void CommandPool::cleanup(VkDevice device) {
     if (!buffers_.empty()) {
         vkFreeCommandBuffers(device, pool_, static_cast<uint32_t>(buffers_.size()), buffers_.data());
@@ -30,6 +32,7 @@ void CommandPool::cleanup(VkDevice device) {
     }
 }
 
+// Allocate primary command buffers from the pool.
 bool CommandPool::allocate(VkDevice device, uint32_t count) {
     if (pool_ == VK_NULL_HANDLE) return false;
     buffers_.resize(count);

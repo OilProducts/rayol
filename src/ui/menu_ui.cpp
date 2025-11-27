@@ -4,6 +4,7 @@
 
 namespace rayol::ui {
 
+// Draw the main menu UI; mutates UiState and returns one-frame intents.
 MenuIntents render_menu_ui(UiState& state) {
     MenuIntents intents{};
 

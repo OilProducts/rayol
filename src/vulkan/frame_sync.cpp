@@ -6,6 +6,7 @@ namespace rayol {
 
 FrameSync::~FrameSync() = default;
 
+// Create per-frame semaphores and fences.
 bool FrameSync::init(VkDevice device) {
     if (initialized_) return true;
 
@@ -28,6 +29,7 @@ bool FrameSync::init(VkDevice device) {
     return true;
 }
 
+// Destroy sync objects.
 void FrameSync::cleanup(VkDevice device) {
     if (!initialized_) return;
     for (uint32_t i = 0; i < max_frames_; ++i) {
@@ -48,6 +50,7 @@ void FrameSync::cleanup(VkDevice device) {
     initialized_ = false;
 }
 
+// Acquire swapchain image and sync fences for the current frame.
 bool FrameSync::acquire(VkDevice device, VkSwapchainKHR swapchain, uint32_t& image_index) {
     vkWaitForFences(device, 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
 
@@ -75,6 +78,7 @@ bool FrameSync::acquire(VkDevice device, VkSwapchainKHR swapchain, uint32_t& ima
     return true;
 }
 
+// Submit a single command buffer with the current frame semaphores/fence.
 bool FrameSync::submit(VkQueue queue, VkCommandBuffer cmd, VkFence fence, VkSemaphore wait_sem, VkSemaphore signal_sem) {
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit_info{};
@@ -94,6 +98,7 @@ bool FrameSync::submit(VkQueue queue, VkCommandBuffer cmd, VkFence fence, VkSema
     return true;
 }
 
+// Present the acquired image; returns false if swapchain is out of date.
 bool FrameSync::present(VkQueue queue, VkSwapchainKHR swapchain, uint32_t image_index, VkSemaphore wait_sem) {
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

@@ -15,6 +15,7 @@ namespace {
 constexpr Uint32 kWindowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
 }
 
+// Initialize systems and drive the main loop with mode switching.
 int App::run() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "SDL initialization failed: " << SDL_GetError() << std::endl;

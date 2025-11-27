@@ -17,11 +17,13 @@ bool Swapchain::init(DeviceContext& device, SDL_Window* window) {
     return true;
 }
 
+// Recreate swapchain and dependent resources (e.g., after resize).
 bool Swapchain::recreate(DeviceContext& device, SDL_Window* window) {
     cleanup(device);
     return init(device, window);
 }
 
+// Release swapchain, views, framebuffers, and render pass.
 void Swapchain::cleanup(DeviceContext& device) {
     for (auto framebuffer : framebuffers_) {
         if (framebuffer != VK_NULL_HANDLE) {
@@ -48,6 +50,7 @@ void Swapchain::cleanup(DeviceContext& device) {
     }
 }
 
+// Create swapchain and fetch swapchain images.
 bool Swapchain::create_swapchain(DeviceContext& device, SDL_Window* window) {
     VkSurfaceCapabilitiesKHR capabilities{};
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.physical_device(), device.surface(), &capabilities);
@@ -108,6 +111,7 @@ bool Swapchain::create_swapchain(DeviceContext& device, SDL_Window* window) {
     return true;
 }
 
+// Create image views for each swapchain image.
 bool Swapchain::create_image_views(DeviceContext& device) {
     views_.resize(images_.size());
     for (size_t i = 0; i < images_.size(); ++i) {
@@ -132,6 +136,7 @@ bool Swapchain::create_image_views(DeviceContext& device) {
     return true;
 }
 
+// Create a simple color-only render pass.
 bool Swapchain::create_render_pass(DeviceContext& device) {
     VkAttachmentDescription color_attachment{};
     color_attachment.format = format_;
@@ -176,6 +181,7 @@ bool Swapchain::create_render_pass(DeviceContext& device) {
     return true;
 }
 
+// Create framebuffers for each swapchain view.
 bool Swapchain::create_framebuffers(DeviceContext& device) {
     framebuffers_.resize(views_.size());
     for (size_t i = 0; i < views_.size(); ++i) {
@@ -217,6 +223,7 @@ VkPresentModeKHR Swapchain::choose_present_mode(const std::vector<VkPresentModeK
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
+// Choose swapchain extent from surface caps and window size.
 VkExtent2D Swapchain::choose_extent(SDL_Window* window, const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;

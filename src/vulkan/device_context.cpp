@@ -20,6 +20,7 @@ DeviceContext::~DeviceContext() {
     }
 }
 
+// Create instance/surface/device/queue/descriptor pool.
 bool DeviceContext::init(SDL_Window* window) {
     if (!create_instance()) return false;
     if (!create_surface(window)) return false;
@@ -29,6 +30,7 @@ bool DeviceContext::init(SDL_Window* window) {
     return true;
 }
 
+// Build a Vulkan instance with SDL-requested extensions.
 bool DeviceContext::create_instance() {
     uint32_t extension_count = 0;
     const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extension_count);
@@ -58,6 +60,7 @@ bool DeviceContext::create_instance() {
     return true;
 }
 
+// Create a presentation surface from the SDL window.
 bool DeviceContext::create_surface(SDL_Window* window) {
     if (!SDL_Vulkan_CreateSurface(window, instance_, nullptr, &surface_)) {
         std::cerr << "SDL_Vulkan_CreateSurface failed: " << SDL_GetError() << std::endl;
@@ -66,6 +69,7 @@ bool DeviceContext::create_surface(SDL_Window* window) {
     return true;
 }
 
+// Pick a GPU that supports graphics + present on our surface.
 bool DeviceContext::pick_physical_device() {
     uint32_t device_count = 0;
     vkEnumeratePhysicalDevices(instance_, &device_count, nullptr);
@@ -88,6 +92,7 @@ bool DeviceContext::pick_physical_device() {
     return false;
 }
 
+// Check if a GPU has a graphics+present queue family.
 bool DeviceContext::is_device_suitable(VkPhysicalDevice device) {
     uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
@@ -109,6 +114,7 @@ bool DeviceContext::is_device_suitable(VkPhysicalDevice device) {
     return false;
 }
 
+// Create logical device and fetch graphics/present queue.
 bool DeviceContext::create_device() {
     float priority = 1.0f;
     VkDeviceQueueCreateInfo queue_info{};
@@ -135,6 +141,7 @@ bool DeviceContext::create_device() {
     return true;
 }
 
+// Allocate a descriptor pool for ImGui/resources.
 bool DeviceContext::create_descriptor_pool() {
     const VkDescriptorPoolSize pool_sizes[] = {
         {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},

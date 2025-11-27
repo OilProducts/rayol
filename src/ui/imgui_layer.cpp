@@ -98,11 +98,13 @@ void ImGuiLayer::process_event(const SDL_Event& event) {
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
+// Render ImGui draw data into the given command buffer.
 void ImGuiLayer::end_frame(VkCommandBuffer cmd, const VkExtent2D& /*extent*/) {
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
+// Recreate backend objects after swapchain/render pass updates.
 void ImGuiLayer::on_swapchain_recreated(VkRenderPass new_render_pass, uint32_t min_image_count) {
     info_.render_pass = new_render_pass;
     info_.min_image_count = min_image_count;

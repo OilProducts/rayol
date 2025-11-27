@@ -6,6 +6,7 @@
 
 namespace rayol {
 
+// Initialize device, swapchain, command buffers, and sync objects.
 bool VulkanContext::init(SDL_Window* window) {
     window_ = window;
     if (!device_.init(window_)) return false;
@@ -16,6 +17,7 @@ bool VulkanContext::init(SDL_Window* window) {
     return true;
 }
 
+// Draw a frame with clear + optional UI; handles swapchain recreation on resize.
 bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback) {
     uint32_t image_index = 0;
     if (!sync_.acquire(device_.device(), swapchain_.handle(), image_index)) {
@@ -36,7 +38,38 @@ bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(b
 
     VkCommandBuffer cmd = command_pool_.buffers()[image_index];
     vkResetCommandBuffer(cmd, 0);
+    record_commands(cmd, image_index);
 
+    if (!sync_.submit(device_.queue(), cmd, sync_.current_in_flight_fence(),
+                      sync_.current_image_available(), sync_.current_render_finished())) {
+        return false;
+    }
+
+    if (!sync_.present(device_.queue(), swapchain_.handle(), image_index, sync_.current_render_finished())) {
+        if (!swapchain_.recreate(device_, window_)) return false;
+        if (!command_pool_.allocate(device_.device(), static_cast<uint32_t>(swapchain_.framebuffers().size()))) return false;
+        if (imgui_layer_) {
+            imgui_layer_->on_swapchain_recreated(swapchain_.render_pass(), swapchain_.min_image_count());
+        }
+    }
+
+    sync_.advance_frame();
+    return true;
+}
+
+// Wait for idle and release all Vulkan resources.
+void VulkanContext::shutdown() {
+    if (device_.device() != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(device_.device());
+    }
+
+    sync_.cleanup(device_.device());
+    command_pool_.cleanup(device_.device());
+    swapchain_.cleanup(device_);
+}
+
+// Record a render pass that clears the target and draws ImGui, if present.
+void VulkanContext::record_commands(VkCommandBuffer cmd, size_t image_index) {
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -60,32 +93,6 @@ bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(b
     }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
-
-    if (!sync_.submit(device_.queue(), cmd, sync_.current_in_flight_fence(),
-                      sync_.current_image_available(), sync_.current_render_finished())) {
-        return false;
-    }
-
-    if (!sync_.present(device_.queue(), swapchain_.handle(), image_index, sync_.current_render_finished())) {
-        if (!swapchain_.recreate(device_, window_)) return false;
-        if (!command_pool_.allocate(device_.device(), static_cast<uint32_t>(swapchain_.framebuffers().size()))) return false;
-        if (imgui_layer_) {
-            imgui_layer_->on_swapchain_recreated(swapchain_.render_pass(), swapchain_.min_image_count());
-        }
-    }
-
-    sync_.advance_frame();
-    return true;
-}
-
-void VulkanContext::shutdown() {
-    if (device_.device() != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(device_.device());
-    }
-
-    sync_.cleanup(device_.device());
-    command_pool_.cleanup(device_.device());
-    swapchain_.cleanup(device_);
 }
 
 }  // namespace rayol
