@@ -4,6 +4,7 @@
 
 namespace rayol {
 
+// Default destructor; cleanup handled explicitly.
 CommandPool::~CommandPool() = default;
 
 // Create a resettable command pool for the given queue family.

@@ -7,6 +7,7 @@
 
 namespace rayol {
 
+// Default destructor; cleanup handled explicitly.
 Swapchain::~Swapchain() = default;
 
 bool Swapchain::init(DeviceContext& device, SDL_Window* window) {

@@ -5,6 +5,7 @@
 
 namespace rayol {
 
+// Destroy descriptor pool, device, surface, and instance.
 DeviceContext::~DeviceContext() {
     if (descriptor_pool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);

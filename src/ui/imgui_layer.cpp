@@ -41,6 +41,7 @@ bool ImGuiLayer::init(const InitInfo& init_info) {
     return true;
 }
 
+// Upload font textures using a transient command buffer.
 bool ImGuiLayer::upload_fonts() {
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -88,12 +89,14 @@ bool ImGuiLayer::upload_fonts() {
     return true;
 }
 
+// Begin a new ImGui frame.
 void ImGuiLayer::begin_frame() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 }
 
+// Forward SDL input events to ImGui.
 void ImGuiLayer::process_event(const SDL_Event& event) {
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
@@ -128,6 +131,7 @@ void ImGuiLayer::on_swapchain_recreated(VkRenderPass new_render_pass, uint32_t m
     upload_fonts();
 }
 
+// Shutdown ImGui and backend bindings.
 void ImGuiLayer::shutdown() {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();

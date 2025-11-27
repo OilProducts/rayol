@@ -4,6 +4,7 @@
 
 namespace rayol {
 
+// Default destructor; cleanup handled explicitly.
 FrameSync::~FrameSync() = default;
 
 // Create per-frame semaphores and fences.
