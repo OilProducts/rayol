@@ -42,7 +42,6 @@ bool ImGuiLayer::init(const InitInfo& init_info) {
 }
 
 bool ImGuiLayer::upload_fonts() {
-    // Create fonts texture using a one-off command buffer.
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -99,7 +98,7 @@ void ImGuiLayer::process_event(const SDL_Event& event) {
     ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
-void ImGuiLayer::end_frame(VkCommandBuffer cmd, const VkExtent2D& extent) {
+void ImGuiLayer::end_frame(VkCommandBuffer cmd, const VkExtent2D& /*extent*/) {
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
@@ -107,6 +106,9 @@ void ImGuiLayer::end_frame(VkCommandBuffer cmd, const VkExtent2D& extent) {
 void ImGuiLayer::on_swapchain_recreated(VkRenderPass new_render_pass, uint32_t min_image_count) {
     info_.render_pass = new_render_pass;
     info_.min_image_count = min_image_count;
+
+    ImGui_ImplVulkan_Shutdown();
+
     ImGui_ImplVulkan_InitInfo vk_info{};
     vk_info.Instance = info_.instance;
     vk_info.PhysicalDevice = info_.physical_device;
@@ -114,12 +116,12 @@ void ImGuiLayer::on_swapchain_recreated(VkRenderPass new_render_pass, uint32_t m
     vk_info.QueueFamily = info_.queue_family;
     vk_info.Queue = info_.queue;
     vk_info.DescriptorPool = info_.descriptor_pool;
+    vk_info.RenderPass = info_.render_pass;
     vk_info.MinImageCount = info_.min_image_count;
     vk_info.ImageCount = info_.min_image_count;
     vk_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     vk_info.UseDynamicRendering = VK_FALSE;
-    vk_info.RenderPass = info_.render_pass;
-    ImGui_ImplVulkan_Shutdown();
+
     ImGui_ImplVulkan_Init(&vk_info);
     upload_fonts();
 }

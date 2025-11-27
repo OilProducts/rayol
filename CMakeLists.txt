@@ -55,6 +55,10 @@ set(rayol_sources
     src/rayol.cpp
     src/app.cpp
     src/vulkan/context.cpp
+    src/vulkan/device_context.cpp
+    src/vulkan/swapchain.cpp
+    src/vulkan/frame_sync.cpp
+    src/vulkan/command_pool.cpp
     src/ui/imgui_layer.cpp
     src/ui/menu_ui.cpp
 )
