@@ -17,9 +17,13 @@ namespace rayol {
 // Owns Vulkan instance/swapchain/sync and records a simple clear (and optional ImGui) each frame.
 class VulkanContext {
 public:
+    // Initialize device, swapchain, command pool, and sync objects.
     bool init(SDL_Window* window);
+    // Provide ImGui layer for UI rendering.
     void set_imgui_layer(ImGuiLayer* layer) { imgui_layer_ = layer; }
+    // Draw a frame (clear + optional UI). The callback can request exit via the flag.
     bool draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback);
+    // Wait for idle and clean up all Vulkan resources.
     void shutdown();
 
     VkRenderPass render_pass() const { return swapchain_.render_pass(); }
@@ -34,6 +38,7 @@ public:
 
 private:
     static constexpr VkClearColorValue kClearColor = {{0.05f, 0.07f, 0.12f, 1.0f}};
+    // Record a single-pass render of clear + ImGui into the provided command buffer.
     void record_commands(VkCommandBuffer cmd, size_t image_index);
 
     SDL_Window* window_{nullptr};

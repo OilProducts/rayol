@@ -12,11 +12,16 @@ public:
     explicit FrameSync(uint32_t max_frames = 2) : max_frames_(max_frames) {}
     ~FrameSync();
 
+    // Create per-frame semaphores and fences.
     bool init(VkDevice device);
+    // Destroy all sync objects.
     void cleanup(VkDevice device);
 
+    // Acquire the next swapchain image; returns false on out-of-date/suboptimal.
     bool acquire(VkDevice device, VkSwapchainKHR swapchain, uint32_t& image_index);
+    // Submit a single command buffer with wait/signal semaphores.
     bool submit(VkQueue queue, VkCommandBuffer cmd, VkFence fence, VkSemaphore wait_sem, VkSemaphore signal_sem);
+    // Present the current image; returns false on out-of-date/suboptimal.
     bool present(VkQueue queue, VkSwapchainKHR swapchain, uint32_t image_index, VkSemaphore wait_sem);
 
     VkFence current_in_flight_fence() const { return in_flight_fences_[current_frame_]; }
