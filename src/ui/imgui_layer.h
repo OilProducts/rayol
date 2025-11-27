@@ -11,15 +11,15 @@ namespace rayol {
 class ImGuiLayer {
 public:
     struct InitInfo {
-        SDL_Window* window{};
-        VkInstance instance{};
-        VkPhysicalDevice physical_device{};
-        VkDevice device{};
-        uint32_t queue_family{};
-        VkQueue queue{};
-        VkDescriptorPool descriptor_pool{};
-        uint32_t min_image_count{};
-        VkRenderPass render_pass{};
+        SDL_Window* window{};              // SDL window handle used by the backend
+        VkInstance instance{};             // Vulkan instance
+        VkPhysicalDevice physical_device{};  // Physical device for capabilities
+        VkDevice device{};                 // Logical device
+        uint32_t queue_family{};           // Graphics/Present queue family index
+        VkQueue queue{};                   // Graphics/Present queue
+        VkDescriptorPool descriptor_pool{};  // Descriptor pool for ImGui resources
+        uint32_t min_image_count{};        // Swapchain image count
+        VkRenderPass render_pass{};        // Render pass compatible with swapchain
     };
 
     bool init(const InitInfo& info);
