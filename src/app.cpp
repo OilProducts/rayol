@@ -6,6 +6,7 @@
 #if RAYOL_ENABLE_VULKAN
 #include "vulkan/context.h"
 #include "ui/imgui_layer.h"
+#include "ui/demo_ui.h"
 #if RAYOL_USE_IMGUI
 #include <imgui.h>
 #endif
@@ -81,7 +82,12 @@ int App::run() {
 
 #if RAYOL_ENABLE_VULKAN
         bool ui_requested_exit = false;
-        if (!vk.draw_frame(ui_requested_exit)) {
+#if RAYOL_USE_IMGUI
+        auto ui_callback = [&]() -> bool { return ui::render_demo_ui(); };
+#else
+        auto ui_callback = [&]() -> bool { return false; };
+#endif
+        if (!vk.draw_frame(ui_requested_exit, ui_callback)) {
             running = false;
         }
         if (ui_requested_exit) {
