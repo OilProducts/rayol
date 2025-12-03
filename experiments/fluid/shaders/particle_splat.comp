@@ -1,0 +1,64 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : enable
+
+// Simple particle splat into a 3D density image using a smooth kernel.
+// Intended as a GPU mirror of experiments/fluid/fluid_sim.cpp.
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+struct Particle {
+    vec4 pos_radius;  // xyz = position, w = influence radius
+    vec4 vel_mass;    // xyz = velocity, w = mass
+};
+
+layout(std430, binding = 0) readonly buffer Particles {
+    Particle particles[];
+};
+
+layout(binding = 1, r32f) uniform coherent image3D uDensity;
+
+layout(push_constant) uniform Params {
+    vec3 origin;
+    float voxelSize;
+    float kernelRadius;
+    ivec3 dims;
+    uint particleCount;
+} params;
+
+float poly6(float r, float h) {
+    if (r >= h || h <= 0.0) return 0.0;
+    float h2 = h * h;
+    float term = h2 - r * r;
+    const float k = 315.0 / (64.0 * 3.14159265359);
+    return k * term * term * term / (h2 * h2 * h2 * h);
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= params.particleCount) return;
+
+    Particle p = particles[idx];
+    float influence = max(params.kernelRadius, p.pos_radius.w);
+
+    vec3 minP = p.pos_radius.xyz - vec3(influence);
+    vec3 maxP = p.pos_radius.xyz + vec3(influence);
+
+    ivec3 minVoxel = ivec3(floor((minP - params.origin) / params.voxelSize));
+    ivec3 maxVoxel = ivec3(floor((maxP - params.origin) / params.voxelSize));
+
+    minVoxel = clamp(minVoxel, ivec3(0), params.dims - ivec3(1));
+    maxVoxel = clamp(maxVoxel, ivec3(0), params.dims - ivec3(1));
+
+    for (int z = minVoxel.z; z <= maxVoxel.z; ++z) {
+        for (int y = minVoxel.y; y <= maxVoxel.y; ++y) {
+            for (int x = minVoxel.x; x <= maxVoxel.x; ++x) {
+                vec3 center = params.origin + (vec3(x, y, z) + vec3(0.5)) * params.voxelSize;
+                float r = length(p.pos_radius.xyz - center);
+                float w = poly6(r, influence);
+                if (w > 0.0) {
+                    imageAtomicAdd(uDensity, ivec3(x, y, z), p.vel_mass.w * w);
+                }
+            }
+        }
+    }
+}

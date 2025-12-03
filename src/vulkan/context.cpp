@@ -18,13 +18,17 @@ bool VulkanContext::init(SDL_Window* window) {
 }
 
 // Draw a frame with clear + optional UI; handles swapchain recreation on resize.
-bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback) {
+bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback,
+                               const FluidDrawData* fluid) {
     uint32_t image_index = 0;
     if (!sync_.acquire(device_.device(), swapchain_.handle(), image_index)) {
         if (!swapchain_.recreate(device_, window_)) return false;
         if (!command_pool_.allocate(device_.device(), static_cast<uint32_t>(swapchain_.framebuffers().size()))) return false;
         if (imgui_layer_) {
             imgui_layer_->on_swapchain_recreated(swapchain_.render_pass(), swapchain_.min_image_count());
+        }
+        if (fluid && fluid->renderer) {
+            fluid->renderer->on_swapchain_recreated(swapchain_.render_pass(), swapchain_.extent());
         }
         return true;
     }
@@ -38,7 +42,7 @@ bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(b
 
     VkCommandBuffer cmd = command_pool_.buffers()[image_index];
     vkResetCommandBuffer(cmd, 0);
-    record_commands(cmd, image_index);
+    record_commands(cmd, image_index, fluid);
 
     if (!sync_.submit(device_.queue(), cmd, sync_.current_in_flight_fence(),
                       sync_.current_image_available(), sync_.current_render_finished())) {
@@ -50,6 +54,9 @@ bool VulkanContext::draw_frame(bool& should_close_ui, const std::function<void(b
         if (!command_pool_.allocate(device_.device(), static_cast<uint32_t>(swapchain_.framebuffers().size()))) return false;
         if (imgui_layer_) {
             imgui_layer_->on_swapchain_recreated(swapchain_.render_pass(), swapchain_.min_image_count());
+        }
+        if (fluid && fluid->renderer) {
+            fluid->renderer->on_swapchain_recreated(swapchain_.render_pass(), swapchain_.extent());
         }
     }
 
@@ -69,11 +76,16 @@ void VulkanContext::shutdown() {
 }
 
 // Record a render pass that clears the target and draws ImGui, if present.
-void VulkanContext::record_commands(VkCommandBuffer cmd, size_t image_index) {
+void VulkanContext::record_commands(VkCommandBuffer cmd, size_t image_index, const FluidDrawData* fluid) {
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &begin_info);
+
+    // Fluid compute before the render pass.
+    if (fluid && fluid->renderer && fluid->sim) {
+        fluid->renderer->record_compute(cmd, *fluid->sim, fluid->enabled);
+    }
 
     VkClearValue clear_value{};
     clear_value.color = kClearColor;
@@ -88,6 +100,10 @@ void VulkanContext::record_commands(VkCommandBuffer cmd, size_t image_index) {
     render_pass_info.pClearValues = &clear_value;
 
     vkCmdBeginRenderPass(cmd, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    if (fluid && fluid->renderer && fluid->sim) {
+        fluid->renderer->record_draw(cmd, *fluid->sim, fluid->enabled, fluid->frame_index,
+                                     fluid->density_scale, fluid->absorption);
+    }
     if (imgui_layer_) {
         imgui_layer_->end_frame(cmd, swapchain_.extent());
     }

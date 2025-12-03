@@ -31,6 +31,32 @@ if(NOT GLSLC)
     message(FATAL_ERROR "glslc not found (part of Vulkan SDK) – required for shader compilation.")
 endif()
 
+# Compile fluid experiment shaders to SPIR-V.
+set(rayol_fluid_shader_dir "${CMAKE_BINARY_DIR}/shaders/fluid")
+set(RAYOL_FLUID_SHADER_DIR "${rayol_fluid_shader_dir}")
+file(MAKE_DIRECTORY "${rayol_fluid_shader_dir}")
+set(rayol_fluid_shaders
+    experiments/fluid/shaders/particle_splat.comp
+    experiments/fluid/shaders/volume_raymarch.frag
+    experiments/fluid/shaders/fullscreen_uv.vert
+)
+set(rayol_fluid_spv)
+foreach(shader ${rayol_fluid_shaders})
+    get_filename_component(shader_name "${shader}" NAME)
+    set(spv "${rayol_fluid_shader_dir}/${shader_name}.spv")
+    set(shader_src "${CMAKE_CURRENT_SOURCE_DIR}/${shader}")
+    add_custom_command(
+        OUTPUT "${spv}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${rayol_fluid_shader_dir}"
+        COMMAND ${GLSLC} -o "${spv}" "${shader_src}"
+        DEPENDS "${shader_src}"
+        COMMENT "Compiling ${shader_name} -> ${spv}"
+        VERBATIM
+    )
+    list(APPEND rayol_fluid_spv "${spv}")
+endforeach()
+add_custom_target(rayol_fluid_shaders ALL DEPENDS ${rayol_fluid_spv})
+
 find_package(SDL3 QUIET CONFIG)
 if(NOT SDL3_FOUND)
     if(NOT RAYOL_BUNDLE_SDL3)
@@ -61,17 +87,24 @@ set(rayol_sources
     src/vulkan/command_pool.cpp
     src/ui/imgui_layer.cpp
     src/ui/menu_ui.cpp
+    src/ui/fluid_ui.cpp
 )
 
-add_executable(rayol ${rayol_sources})
+# Experimental fluid module; excluded from default build but available as target.
+add_subdirectory(experiments/fluid EXCLUDE_FROM_ALL)
 
-target_include_directories(rayol PRIVATE src)
+add_executable(rayol ${rayol_sources})
+add_dependencies(rayol rayol_fluid_shaders)
+target_compile_definitions(rayol PUBLIC RAYOL_FLUID_SHADER_DIR=\"${rayol_fluid_shader_dir}\")
+
+target_include_directories(rayol PRIVATE src experiments ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(rayol PRIVATE SDL3::SDL3)
 if(TARGET SDL3::SDL3main)
     target_link_libraries(rayol PRIVATE SDL3::SDL3main)
 endif()
 target_link_libraries(rayol PRIVATE Vulkan::Vulkan)
+target_link_libraries(rayol PRIVATE rayol_fluid)
 
 FetchContent_Declare(
     imgui

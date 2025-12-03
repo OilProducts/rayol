@@ -11,8 +11,18 @@
 #include "vulkan/command_pool.h"
 #include "vulkan/frame_sync.h"
 #include "vulkan/swapchain.h"
+#include "experiments/fluid/fluid_renderer.h"
 
 namespace rayol {
+
+struct FluidDrawData {
+    fluid::FluidRenderer* renderer{nullptr};
+    const fluid::FluidExperiment* sim{nullptr};
+    bool enabled{false};
+    uint32_t frame_index{0};
+    float density_scale{1.0f};
+    float absorption{1.0f};
+};
 
 // Owns Vulkan instance/swapchain/sync and records a simple clear (and optional ImGui) each frame.
 class VulkanContext {
@@ -22,7 +32,8 @@ public:
     // Provide ImGui layer for UI rendering.
     void set_imgui_layer(ImGuiLayer* layer) { imgui_layer_ = layer; }
     // Draw a frame (clear + optional UI). The callback can request exit via the flag.
-    bool draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback);
+    bool draw_frame(bool& should_close_ui, const std::function<void(bool&)>& ui_callback,
+                    const FluidDrawData* fluid = nullptr);
     // Wait for idle and clean up all Vulkan resources.
     void shutdown();
 
@@ -35,11 +46,12 @@ public:
     VkQueue queue() const { return device_.queue(); }
     uint32_t min_image_count() const { return swapchain_.min_image_count(); }
     VkExtent2D swapchain_extent() const { return swapchain_.extent(); }
+    bool atomic_float_enabled() const { return device_.atomic_float_enabled(); }
 
 private:
     static constexpr VkClearColorValue kClearColor = {{0.05f, 0.07f, 0.12f, 1.0f}};
     // Record a single-pass render of clear + ImGui into the provided command buffer.
-    void record_commands(VkCommandBuffer cmd, size_t image_index);
+    void record_commands(VkCommandBuffer cmd, size_t image_index, const FluidDrawData* fluid);
 
     SDL_Window* window_{nullptr};
     DeviceContext device_{};

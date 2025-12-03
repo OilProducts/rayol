@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <vector>
+#include <cstring>
 
 namespace rayol {
 
@@ -115,6 +116,19 @@ bool DeviceContext::is_device_suitable(VkPhysicalDevice device) {
     return false;
 }
 
+bool DeviceContext::is_extension_supported(const char* extension) const {
+    uint32_t count = 0;
+    vkEnumerateDeviceExtensionProperties(physical_device_, nullptr, &count, nullptr);
+    std::vector<VkExtensionProperties> props(count);
+    vkEnumerateDeviceExtensionProperties(physical_device_, nullptr, &count, props.data());
+    for (const auto& p : props) {
+        if (std::strcmp(p.extensionName, extension) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Create logical device and fetch graphics/present queue.
 bool DeviceContext::create_device() {
     float priority = 1.0f;
@@ -124,14 +138,35 @@ bool DeviceContext::create_device() {
     queue_info.queueCount = 1;
     queue_info.pQueuePriorities = &priority;
 
-    const char* device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    std::vector<const char*> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_float_feats{};
+    atomic_float_feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT;
+
+    VkPhysicalDeviceFeatures2 features2{};
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = nullptr;
+
+    if (is_extension_supported(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME)) {
+        vkGetPhysicalDeviceFeatures2(physical_device_, &features2);
+        features2.pNext = &atomic_float_feats;
+        vkGetPhysicalDeviceFeatures2(physical_device_, &features2);
+        if (atomic_float_feats.shaderImageFloat32AtomicAdd || atomic_float_feats.shaderImageFloat32Atomics) {
+            atomic_float_feats.shaderImageFloat32AtomicAdd = VK_TRUE;
+            atomic_float_feats.shaderImageFloat32Atomics = VK_TRUE;
+            device_extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+            atomic_float_enabled_ = true;
+        }
+    }
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_info.queueCreateInfoCount = 1;
     create_info.pQueueCreateInfos = &queue_info;
-    create_info.enabledExtensionCount = 1;
-    create_info.ppEnabledExtensionNames = device_extensions;
+    create_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
+    create_info.ppEnabledExtensionNames = device_extensions.data();
+    create_info.pEnabledFeatures = nullptr;
+    create_info.pNext = &features2;
 
     if (vkCreateDevice(physical_device_, &create_info, nullptr, &device_) != VK_SUCCESS) {
         std::cerr << "Failed to create logical device." << std::endl;

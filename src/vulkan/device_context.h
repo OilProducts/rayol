@@ -21,6 +21,7 @@ public:
     uint32_t queue_family_index() const { return queue_family_index_; }
     VkSurfaceKHR surface() const { return surface_; }
     VkDescriptorPool descriptor_pool() const { return descriptor_pool_; }
+    bool atomic_float_enabled() const { return atomic_float_enabled_; }
 
 private:
     // Create Vulkan instance with required SDL extensions.
@@ -31,6 +32,8 @@ private:
     bool pick_physical_device();
     // Check if the physical device supports graphics + present.
     bool is_device_suitable(VkPhysicalDevice device);
+    // Check if a device extension is available.
+    bool is_extension_supported(const char* extension) const;
     // Create logical device and graphics/present queue.
     bool create_device();
     // Allocate a descriptor pool for ImGui and future resources.
@@ -43,6 +46,7 @@ private:
     VkDevice device_{VK_NULL_HANDLE};
     VkQueue queue_{VK_NULL_HANDLE};
     VkDescriptorPool descriptor_pool_{VK_NULL_HANDLE};
+    bool atomic_float_enabled_{false};
 };
 
 }  // namespace rayol
