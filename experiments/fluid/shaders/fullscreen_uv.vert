@@ -10,5 +10,7 @@ void main() {
     );
     vec2 pos = positions[gl_VertexIndex];
     gl_Position = vec4(pos, 0.0, 1.0);
-    vUV = pos * 0.5 + 0.5;
+    // Flip Y so that increasing world Y (camera moving up)
+    // corresponds to features moving down in the window.
+    vUV = vec2(pos.x * 0.5 + 0.5, -pos.y * 0.5 + 0.5);
 }

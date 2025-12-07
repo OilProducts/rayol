@@ -80,6 +80,7 @@ int App::run() {
     vk.set_imgui_layer(&imgui_layer);
 
     bool running = true;
+    bool rotating_camera = false;
     ui::UiState ui_state{};
     fluid::FluidExperiment fluid;
     fluid::FluidRenderer fluid_renderer;
@@ -122,6 +123,19 @@ int App::run() {
                 running = false;
                 break;
             }
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                event.button.button == SDL_BUTTON_RIGHT) {
+                rotating_camera = true;
+            }
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                event.button.button == SDL_BUTTON_RIGHT) {
+                rotating_camera = false;
+            }
+            if (event.type == SDL_EVENT_MOUSE_MOTION && rotating_camera) {
+                constexpr float kMouseSensitivity = 0.0025f;  // radians per pixel
+                camera.yaw += static_cast<float>(event.motion.xrel) * kMouseSensitivity;
+                camera.pitch -= static_cast<float>(event.motion.yrel) * kMouseSensitivity;
+            }
             imgui_layer.process_event(event);
         }
         if (!running) {
@@ -151,6 +165,37 @@ int App::run() {
                 fluid_intents = ui::render_fluid_ui(ui_state, fluid.stats());
             };
 
+            // Camera controls: WASD move, Space/LCtrl up/down, right mouse + move to look.
+            const bool* keys = SDL_GetKeyboardState(nullptr);
+            float move_speed = 1.5f;  // units per second
+            camera.pitch = std::clamp(camera.pitch, -1.4f, 1.4f);
+
+            float cy = std::cos(camera.yaw);
+            float sy = std::sin(camera.yaw);
+            float cp = std::cos(camera.pitch);
+            float sp = std::sin(camera.pitch);
+            fluid::Vec3 forward{cy * cp, sp, sy * cp};
+            fluid::Vec3 world_up{0.0f, 1.0f, 0.0f};
+            fluid::Vec3 right = fluid::normalize(cross(forward, world_up));
+            if (right.x == 0.0f && right.y == 0.0f && right.z == 0.0f) {
+                right = {1.0f, 0.0f, 0.0f};
+            }
+            fluid::Vec3 up = cross(right, forward);
+            up = fluid::normalize(up);
+
+            fluid::Vec3 move{0.0f, 0.0f, 0.0f};
+            if (keys[SDL_SCANCODE_W]) move = move + forward;
+            if (keys[SDL_SCANCODE_S]) move = move - forward;
+            if (keys[SDL_SCANCODE_D]) move = move + right;
+            if (keys[SDL_SCANCODE_A]) move = move - right;
+            // Standard convention: +Y is up in world space.
+            // SPACE moves camera up (+Y), LCTRL moves camera down (-Y).
+            if (keys[SDL_SCANCODE_SPACE]) move.y += 1.0f;
+            if (keys[SDL_SCANCODE_LCTRL]) move.y -= 1.0f;
+            move = fluid::normalize(move);
+            move = move * (move_speed * dt);
+            camera.position = camera.position + move;
+
             FluidDrawData fluid_draw{};
             fluid_draw.renderer = &fluid_renderer;
             fluid_draw.sim = &fluid;
@@ -158,6 +203,12 @@ int App::run() {
             fluid_draw.frame_index = fluid_frame_index;
             fluid_draw.density_scale = ui_state.fluid_density_scale;
             fluid_draw.absorption = ui_state.fluid_absorption;
+
+            // Fill camera data for the renderer using the updated camera.
+            fluid_draw.camera_pos = camera.position;
+            fluid_draw.camera_forward = forward;
+            fluid_draw.camera_right = right;
+            fluid_draw.camera_fov_y = camera.fov_y;
 
             if (!vk.draw_frame(ui_requested_exit, ui_callback, &fluid_draw)) {
                 running = false;
@@ -191,44 +242,6 @@ int App::run() {
                 fluid_frame_index++;
             }
 
-            // Camera controls: WASD move, Space/LCtrl up/down, arrows to look.
-            const bool* keys = SDL_GetKeyboardState(nullptr);
-            float move_speed = 1.5f;  // units per second
-            float rot_speed = 1.5f;   // radians per second
-            camera.yaw += (keys[SDL_SCANCODE_RIGHT] - keys[SDL_SCANCODE_LEFT]) * rot_speed * dt;
-            camera.pitch += (keys[SDL_SCANCODE_UP] - keys[SDL_SCANCODE_DOWN]) * rot_speed * dt;
-            camera.pitch = std::clamp(camera.pitch, -1.4f, 1.4f);
-
-            float cy = std::cos(camera.yaw);
-            float sy = std::sin(camera.yaw);
-            float cp = std::cos(camera.pitch);
-            float sp = std::sin(camera.pitch);
-            fluid::Vec3 forward{cy * cp, sp, sy * cp};
-            fluid::Vec3 world_up{0.0f, 1.0f, 0.0f};
-            fluid::Vec3 right = fluid::normalize(cross(forward, world_up));
-            if (right.x == 0.0f && right.y == 0.0f && right.z == 0.0f) {
-                right = {1.0f, 0.0f, 0.0f};
-            }
-            fluid::Vec3 up = cross(right, forward);
-            up = fluid::normalize(up);
-
-            fluid::Vec3 move{0.0f, 0.0f, 0.0f};
-            if (keys[SDL_SCANCODE_W]) move = move + forward;
-            if (keys[SDL_SCANCODE_S]) move = move - forward;
-            if (keys[SDL_SCANCODE_D]) move = move + right;
-            if (keys[SDL_SCANCODE_A]) move = move - right;
-            if (keys[SDL_SCANCODE_SPACE]) move.y += 1.0f;
-            if (keys[SDL_SCANCODE_LCTRL]) move.y -= 1.0f;
-            move = fluid::normalize(move);
-            move = move * (move_speed * dt);
-            camera.position = camera.position + move;
-
-            // Fill camera data for the renderer.
-            fluid_draw.camera_pos = camera.position;
-            fluid_draw.camera_forward = forward;
-            fluid_draw.camera_right = right;
-            fluid_draw.camera_fov_y = camera.fov_y;
-
             // Periodic debug logging to diagnose black render issues.
             log_timer += dt;
             if (log_timer >= 1.0f) {
@@ -241,6 +254,7 @@ int App::run() {
                           << " avg_speed=" << stats.avg_speed
                           << " max_speed=" << stats.max_speed
                           << " avg_y=" << stats.avg_height
+                          << " cam_y=" << camera.position.y
                           << " dens_scale=" << ui_state.fluid_density_scale
                           << " absorb=" << ui_state.fluid_absorption
                           << " voxel=" << ui_state.fluid_voxel_size

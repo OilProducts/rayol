@@ -291,7 +291,9 @@ void FluidRenderer::record_compute(VkCommandBuffer cmd, const FluidExperiment& s
     }
     // Debug spam reduced: layout info is still helpful once.
     log_once("[fluid] density image is ready for compute", logged_compute_start_);
-    bool gpu_splat = atomic_float_supported_ && compute_pipeline_ != VK_NULL_HANDLE;
+    // Temporarily rely on CPU density upload for rendering while the GPU splat
+    // path is being validated against the SPH CPU sim.
+    bool gpu_splat = false;
 
     if (gpu_splat) {
         size_t particle_capacity = std::max<size_t>(1, sim.particles().size());
@@ -338,10 +340,10 @@ void FluidRenderer::record_compute(VkCommandBuffer cmd, const FluidExperiment& s
 
         barrier_compute_to_fragment(cmd, density_image_.handle);
         density_layout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    } else {
+        // CPU fallback: upload density from the CPU volume when compute is unavailable.
+        upload_cpu_density(cmd, sim);
     }
-
-    // Always upload CPU density as a fallback/verification so the render path has data even if GPU splat fails.
-    upload_cpu_density(cmd, sim);
 }
 
 void FluidRenderer::record_draw(VkCommandBuffer cmd, const FluidExperiment& sim, bool enabled, uint32_t frame_index,
