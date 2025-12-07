@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <iostream>
+#include <cmath>
 
 namespace rayol {
 
@@ -101,6 +102,15 @@ void VulkanContext::record_commands(VkCommandBuffer cmd, size_t image_index, con
 
     vkCmdBeginRenderPass(cmd, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
     if (fluid && fluid->renderer && fluid->sim) {
+        fluid::FluidRenderer::CameraData cam{};
+        cam.pos = fluid->camera_pos;
+        cam.forward = fluid->camera_forward;
+        cam.right = fluid->camera_right;
+        cam.tan_half_fov = std::tan(fluid->camera_fov_y * 0.5f);
+        cam.aspect = static_cast<float>(swapchain_.extent().width) /
+                     static_cast<float>(swapchain_.extent().height);
+        fluid->renderer->set_camera(cam);
+
         fluid->renderer->record_draw(cmd, *fluid->sim, fluid->enabled, fluid->frame_index,
                                      fluid->density_scale, fluid->absorption);
     }

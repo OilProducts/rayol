@@ -30,7 +30,8 @@ float poly6(float r, float h) {
     float h2 = h * h;
     float term = h2 - r * r;
     const float k = 315.0 / (64.0 * 3.14159265359);
-    return k * term * term * term / (h2 * h2 * h2 * h);
+    float h9 = h2 * h2 * h2 * h * h;
+    return k * term * term * term / h9;
 }
 
 void main() {

@@ -14,6 +14,14 @@ class FluidRenderer {
 public:
     FluidRenderer() = default;
 
+    struct CameraData {
+        fluid::Vec3 pos{0.0f, 0.0f, -1.0f};
+        fluid::Vec3 forward{0.0f, 0.0f, 1.0f};
+        fluid::Vec3 right{1.0f, 0.0f, 0.0f};
+        float tan_half_fov{0.577f};  // tan(30 deg)
+        float aspect{16.0f / 9.0f};
+    };
+
     bool init(VkPhysicalDevice physical_device, VkDevice device, uint32_t queue_family, VkQueue queue,
               VkDescriptorPool descriptor_pool, VkRenderPass render_pass, VkExtent2D swapchain_extent,
               bool atomic_float_supported);
@@ -22,6 +30,8 @@ public:
 
     // Record compute work (before render pass) and graphics work (inside render pass).
     void record_compute(VkCommandBuffer cmd, const FluidExperiment& sim, bool enabled);
+    void set_camera(const CameraData& cam) { fluid_draw_camera_ = cam; }
+
     void record_draw(VkCommandBuffer cmd, const FluidExperiment& sim, bool enabled, uint32_t frame_index,
                      float density_scale, float absorption);
 
@@ -51,6 +61,8 @@ private:
     bool update_descriptors();
 
     bool write_particles(const std::vector<Particle>& particles);
+    bool ensure_cpu_staging(size_t byte_size);
+    void upload_cpu_density(VkCommandBuffer cmd, const FluidExperiment& sim);
 
     uint32_t find_memory_type(uint32_t type_bits, VkMemoryPropertyFlags flags) const;
     bool create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags flags, Buffer& out);
@@ -99,6 +111,7 @@ private:
     VkDescriptorSet graphics_set_{VK_NULL_HANDLE};
 
     Buffer particle_buffer_{};
+    Buffer cpu_staging_{};  // Host-visible staging for CPU density upload (debug fallback).
     Image density_image_{};
     VkSampler density_sampler_{VK_NULL_HANDLE};
     VkImageLayout density_layout_{VK_IMAGE_LAYOUT_UNDEFINED};
@@ -106,6 +119,8 @@ private:
     Image noise_image_{};
     VkSampler noise_sampler_{VK_NULL_HANDLE};
     VkImageLayout noise_layout_{VK_IMAGE_LAYOUT_UNDEFINED};
+
+    CameraData fluid_draw_camera_{};
 };
 
 }  // namespace rayol::fluid

@@ -14,8 +14,9 @@ struct UiState {
     float fluid_kernel_radius = 0.06f;  // Splat kernel radius
     float fluid_voxel_size = 0.02f;     // Voxel size for density volume
     float fluid_gravity_y = -9.8f;      // Gravity along Y
-    float fluid_density_scale = 1.0f;   // Render density multiplier
-    float fluid_absorption = 1.0f;      // Absorption coefficient
+    // Rendering multipliers are high by default so the volume is clearly visible on start.
+    float fluid_density_scale = 30.0f;   // Render density multiplier
+    float fluid_absorption = 10.0f;      // Absorption coefficient
 };
 
 struct MenuIntents {

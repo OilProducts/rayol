@@ -18,6 +18,9 @@ struct FluidStats {
     int particle_count = 0;
     float max_density = 0.0f;
     float avg_density = 0.0f;
+    float max_speed = 0.0f;
+    float avg_speed = 0.0f;
+    float avg_height = 0.0f;
 };
 
 // Lightweight CPU-only prototype of the fluid sim: integrates particles, bounces off bounds, and
@@ -44,6 +47,7 @@ private:
     void rebuild_volume();
     void reseed_particles();
     void integrate_particles(float dt);
+    void compute_sph_densities();
     void resplat_density();
     void compute_stats();
 
@@ -52,6 +56,9 @@ private:
     VolumeConfig volume_config_{};
     DensityVolume volume_{};
     std::vector<Particle> particles_;
+    std::vector<float> densities_;
+    std::vector<float> pressures_;
+    float rest_density_ = 0.0f;
 };
 
 }  // namespace rayol::fluid

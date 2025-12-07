@@ -33,6 +33,9 @@ struct GraphicsPush {
     float volume_extent[4];        // xyz extent, w = density scale
     float light_dir_absorb[4];     // xyz dir, w = absorption
     float light_color_ambient[4];  // xyz color, w = ambient
+    float camera_pos[4];           // xyz position, w unused
+    float camera_forward[4];       // xyz forward, w = tan(fov/2)
+    float camera_right[4];         // xyz right, w = aspect
     float max_distance;
     uint32_t frame_index;
     uint32_t padding[2];
@@ -238,63 +241,107 @@ bool FluidRenderer::write_particles(const std::vector<Particle>& particles) {
     return true;
 }
 
+bool FluidRenderer::ensure_cpu_staging(size_t byte_size) {
+    if (cpu_staging_.handle != VK_NULL_HANDLE && cpu_staging_.size >= byte_size) {
+        return true;
+    }
+    destroy_buffer(cpu_staging_);
+    return create_buffer(byte_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cpu_staging_);
+}
+
+void FluidRenderer::upload_cpu_density(VkCommandBuffer cmd, const FluidExperiment& sim) {
+    const auto& density = sim.volume().density();
+    if (density.empty()) return;
+
+    size_t byte_size = density.size() * sizeof(float);
+    if (!ensure_cpu_staging(byte_size)) {
+        log_once("[fluid] Failed to create CPU staging buffer.", warned_no_density_);
+        return;
+    }
+
+    void* mapped = nullptr;
+    vkMapMemory(device_, cpu_staging_.memory, 0, byte_size, 0, &mapped);
+    std::memcpy(mapped, density.data(), byte_size);
+    vkUnmapMemory(device_, cpu_staging_.memory);
+
+    // Transition to TRANSFER_DST, copy, then to SHADER_READ.
+    transition_image(cmd, density_image_.handle, density_layout_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_IMAGE_ASPECT_COLOR_BIT);
+    density_layout_ = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+    VkBufferImageCopy copy{};
+    copy.imageExtent = density_image_.extent;
+    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy.imageSubresource.layerCount = 1;
+    vkCmdCopyBufferToImage(cmd, cpu_staging_.handle, density_image_.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                           &copy);
+
+    transition_image(cmd, density_image_.handle, density_layout_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                     VK_IMAGE_ASPECT_COLOR_BIT);
+    density_layout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
 void FluidRenderer::record_compute(VkCommandBuffer cmd, const FluidExperiment& sim, bool enabled) {
     if (!enabled) return;
     log_once("[fluid] record_compute invoked.", logged_compute_start_);
-    if (!atomic_float_supported_) {
-        log_once("[fluid] VK_EXT_shader_atomic_float not available; skipping GPU splat.", warned_no_compute_);
-        return;
-    }
     if (!ensure_density_image(sim.volume().config())) {
         log_once("[fluid] Failed to create/resize density image.", warned_no_density_);
         return;
     }
-    std::cerr << "[fluid] Density image layout=" << density_layout_ << " view=" << (density_image_.view != VK_NULL_HANDLE) << "\n";
-    if (compute_pipeline_ == VK_NULL_HANDLE) {
-        log_once("[fluid] Compute pipeline not created.", warned_no_pipeline_);
-        return;
-    }
-    size_t particle_capacity = std::max<size_t>(1, sim.particles().size());
-    if (!ensure_particle_buffer(particle_capacity)) return;
-    write_particles(sim.particles());
-    if (!update_descriptors()) {
-        log_once("[fluid] Descriptor update failed; compute skipped.", warned_descriptor_);
-        return;
-    }
-    std::cerr << "[fluid] Descriptors updated; starting dispatch.\n";
+    // Debug spam reduced: layout info is still helpful once.
+    log_once("[fluid] density image is ready for compute", logged_compute_start_);
+    bool gpu_splat = atomic_float_supported_ && compute_pipeline_ != VK_NULL_HANDLE;
 
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    VkClearColorValue zero{{0.0f, 0.0f, 0.0f, 0.0f}};
-    transition_image(cmd, density_image_.handle, density_layout_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_ASPECT_COLOR_BIT);
-    density_layout_ = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    vkCmdClearColorImage(cmd, density_image_.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
-    transition_image(cmd, density_image_.handle, density_layout_, VK_IMAGE_LAYOUT_GENERAL,
-                     VK_IMAGE_ASPECT_COLOR_BIT);
-    density_layout_ = VK_IMAGE_LAYOUT_GENERAL;
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_);
-    ComputePush push{};
-    push.origin[0] = sim.volume().config().origin.x;
-    push.origin[1] = sim.volume().config().origin.y;
-    push.origin[2] = sim.volume().config().origin.z;
-    push.voxel_size = sim.volume().config().voxel_size;
-    push.kernel_radius = sim.settings().kernel_radius;
-    push.dims[0] = sim.volume().config().dims.x;
-    push.dims[1] = sim.volume().config().dims.y;
-    push.dims[2] = sim.volume().config().dims.z;
-    push.particle_count = static_cast<uint32_t>(sim.particles().size());
-    vkCmdPushConstants(cmd, compute_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_layout_, 0, 1, &compute_set_, 0, nullptr);
-    uint32_t groups = (push.particle_count + 127) / 128;
-    if (groups > 0) {
-        vkCmdDispatch(cmd, groups, 1, 1);
-    } else {
-        log_once("[fluid] No particles to dispatch; skipping compute.", warned_no_compute_);
+    if (gpu_splat) {
+        size_t particle_capacity = std::max<size_t>(1, sim.particles().size());
+        if (!ensure_particle_buffer(particle_capacity)) return;
+        write_particles(sim.particles());
+        if (!update_descriptors()) {
+            log_once("[fluid] Descriptor update failed; compute skipped.", warned_descriptor_);
+            gpu_splat = false;
+        }
     }
 
-    barrier_compute_to_fragment(cmd, density_image_.handle);
-    density_layout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (gpu_splat) {
+        log_once("[fluid] descriptors updated; dispatching compute", logged_draw_start_);
+
+        VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkClearColorValue zero{{0.0f, 0.0f, 0.0f, 0.0f}};
+        transition_image(cmd, density_image_.handle, density_layout_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         VK_IMAGE_ASPECT_COLOR_BIT);
+        density_layout_ = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        vkCmdClearColorImage(cmd, density_image_.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+        transition_image(cmd, density_image_.handle, density_layout_, VK_IMAGE_LAYOUT_GENERAL,
+                         VK_IMAGE_ASPECT_COLOR_BIT);
+        density_layout_ = VK_IMAGE_LAYOUT_GENERAL;
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_);
+        ComputePush push{};
+        push.origin[0] = sim.volume().config().origin.x;
+        push.origin[1] = sim.volume().config().origin.y;
+        push.origin[2] = sim.volume().config().origin.z;
+        push.voxel_size = sim.volume().config().voxel_size;
+        push.kernel_radius = sim.settings().kernel_radius;
+        push.dims[0] = sim.volume().config().dims.x;
+        push.dims[1] = sim.volume().config().dims.y;
+        push.dims[2] = sim.volume().config().dims.z;
+        push.particle_count = static_cast<uint32_t>(sim.particles().size());
+        vkCmdPushConstants(cmd, compute_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_layout_, 0, 1, &compute_set_, 0, nullptr);
+        uint32_t groups = (push.particle_count + 127) / 128;
+        if (groups > 0) {
+            vkCmdDispatch(cmd, groups, 1, 1);
+        } else {
+            log_once("[fluid] No particles to dispatch; skipping compute.", warned_no_compute_);
+        }
+
+        barrier_compute_to_fragment(cmd, density_image_.handle);
+        density_layout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    // Always upload CPU density as a fallback/verification so the render path has data even if GPU splat fails.
+    upload_cpu_density(cmd, sim);
 }
 
 void FluidRenderer::record_draw(VkCommandBuffer cmd, const FluidExperiment& sim, bool enabled, uint32_t frame_index,
@@ -328,6 +375,18 @@ void FluidRenderer::record_draw(VkCommandBuffer cmd, const FluidExperiment& sim,
     gpush.light_color_ambient[1] = 0.95f;
     gpush.light_color_ambient[2] = 0.9f;
     gpush.light_color_ambient[3] = 0.1f;  // ambient
+    gpush.camera_pos[0] = fluid_draw_camera_.pos.x;
+    gpush.camera_pos[1] = fluid_draw_camera_.pos.y;
+    gpush.camera_pos[2] = fluid_draw_camera_.pos.z;
+    gpush.camera_pos[3] = 0.0f;
+    gpush.camera_forward[0] = fluid_draw_camera_.forward.x;
+    gpush.camera_forward[1] = fluid_draw_camera_.forward.y;
+    gpush.camera_forward[2] = fluid_draw_camera_.forward.z;
+    gpush.camera_forward[3] = fluid_draw_camera_.tan_half_fov;
+    gpush.camera_right[0] = fluid_draw_camera_.right.x;
+    gpush.camera_right[1] = fluid_draw_camera_.right.y;
+    gpush.camera_right[2] = fluid_draw_camera_.right.z;
+    gpush.camera_right[3] = fluid_draw_camera_.aspect;
     gpush.max_distance = ext.z;
     gpush.frame_index = frame_index;
     vkCmdPushConstants(cmd, graphics_pipeline_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(gpush), &gpush);

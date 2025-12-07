@@ -10,6 +10,30 @@ RayMarchResult ray_march_volume(const DensityVolume& volume, const Ray& input_ra
     Ray ray = input_ray;
     ray.dir = normalize(ray.dir);
 
+    // Compute intersection of ray with the volume's axis-aligned bounds and clamp marching to that range.
+    const VolumeConfig& cfg = volume.config();
+    Vec3 box_min{cfg.origin.x,
+                 cfg.origin.y,
+                 cfg.origin.z};
+    Vec3 box_max{cfg.origin.x + static_cast<float>(cfg.dims.x) * cfg.voxel_size,
+                 cfg.origin.y + static_cast<float>(cfg.dims.y) * cfg.voxel_size,
+                 cfg.origin.z + static_cast<float>(cfg.dims.z) * cfg.voxel_size};
+
+    Vec3 inv_dir{1.0f / ray.dir.x, 1.0f / ray.dir.y, 1.0f / ray.dir.z};
+    Vec3 t0{(box_min.x - ray.origin.x) * inv_dir.x,
+            (box_min.y - ray.origin.y) * inv_dir.y,
+            (box_min.z - ray.origin.z) * inv_dir.z};
+    Vec3 t1{(box_max.x - ray.origin.x) * inv_dir.x,
+            (box_max.y - ray.origin.y) * inv_dir.y,
+            (box_max.z - ray.origin.z) * inv_dir.z};
+    Vec3 tmin{std::min(t0.x, t1.x), std::min(t0.y, t1.y), std::min(t0.z, t1.z)};
+    Vec3 tmax{std::max(t0.x, t1.x), std::max(t0.y, t1.y), std::max(t0.z, t1.z)};
+    float t_enter = std::max(std::max(tmin.x, tmin.y), tmin.z);
+    float t_exit = std::min(std::min(tmax.x, tmax.y), tmax.z);
+    if (t_exit <= t_enter) {
+        return {};
+    }
+
     Vec3 light_dir = normalize(settings.light_dir);
     float step = std::max(0.0001f, settings.step);
 
@@ -18,7 +42,10 @@ RayMarchResult ray_march_volume(const DensityVolume& volume, const Ray& input_ra
     float optical = 0.0f;
     int steps = 0;
 
-    for (float t = 0.0f; t < settings.max_distance && transmittance > 0.001f; t += step, ++steps) {
+    float t_start = std::max(0.0f, t_enter);
+    float t_end = std::min(t_exit, t_start + settings.max_distance);
+
+    for (float t = t_start; t < t_end && transmittance > 0.001f; t += step, ++steps) {
         Vec3 pos = ray.origin + ray.dir * t;
         float density = volume.sample(pos) * settings.density_scale;
         if (density <= 0.0f) {

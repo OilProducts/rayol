@@ -10,9 +10,10 @@ float poly6(float r, float h) {
     float h2 = h * h;
     float r2 = r * r;
     float term = h2 - r2;
-    // Normalized poly6 kernel constant: 315 / (64 * pi * h^9).
+    // Normalized poly6 kernel: 315 / (64 * pi * h^9) * (h^2 - r^2)^3
     constexpr float k = 315.0f / (64.0f * 3.14159265359f);
-    return k * term * term * term / (h2 * h2 * h2 * h);
+    float h9 = h2 * h2 * h2 * h * h;
+    return k * term * term * term / h9;
 }
 
 float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }

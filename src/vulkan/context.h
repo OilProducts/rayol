@@ -22,7 +22,11 @@ struct FluidDrawData {
     uint32_t frame_index{0};
     float density_scale{1.0f};
     float absorption{1.0f};
-};
+    fluid::Vec3 camera_pos{0.0f, 0.0f, -1.0f};
+    fluid::Vec3 camera_forward{0.0f, 0.0f, 1.0f};
+    fluid::Vec3 camera_right{1.0f, 0.0f, 0.0f};
+    float camera_fov_y{60.0f * 3.14159265359f / 180.0f};
+}; 
 
 // Owns Vulkan instance/swapchain/sync and records a simple clear (and optional ImGui) each frame.
 class VulkanContext {
