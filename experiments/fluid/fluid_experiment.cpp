@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <random>
+#include <thread>
 
 namespace rayol::fluid {
 
@@ -40,6 +41,153 @@ constexpr float kSphViscosity = 0.01f;
 // Safety clamps to keep the toy sim numerically stable.
 constexpr float kMaxAccel = 200.0f;
 constexpr float kMaxSpeed = 20.0f;
+
+// Simple helper to run a parallel-for over [begin, end).
+template <typename Func>
+void parallel_for(size_t begin, size_t end, const Func& func) {
+    if (end <= begin) return;
+    unsigned int hw = std::thread::hardware_concurrency();
+    if (hw == 0) hw = 1;
+    size_t total = end - begin;
+    size_t block = (total + hw - 1) / hw;
+    if (block == 0) block = total;
+
+    std::vector<std::thread> threads;
+    threads.reserve(hw);
+    size_t start = begin;
+    for (unsigned int t = 0; t < hw && start < end; ++t) {
+        size_t block_end = std::min(start + block, end);
+        threads.emplace_back([start, block_end, &func]() {
+            for (size_t i = start; i < block_end; ++i) {
+                func(i);
+            }
+        });
+        start = block_end;
+    }
+    for (auto& th : threads) {
+        th.join();
+    }
+}
+
+// Build a simple uniform grid over the simulation volume for SPH neighbor queries.
+void build_neighbor_grid(NeighborGrid& grid,
+                         const VolumeConfig& volume_config,
+                         const std::vector<Particle>& particles,
+                         float kernel_radius) {
+    grid.origin = volume_config.origin;
+    float h = kernel_radius;
+    if (h <= 0.0f) {
+        h = 0.01f;
+    }
+    grid.cell_size = h;
+
+    Vec3 extent{
+        static_cast<float>(volume_config.dims.x) * volume_config.voxel_size,
+        static_cast<float>(volume_config.dims.y) * volume_config.voxel_size,
+        static_cast<float>(volume_config.dims.z) * volume_config.voxel_size,
+    };
+
+    auto dim_for_axis = [&](float axis_extent) {
+        int d = static_cast<int>(std::ceil(axis_extent / grid.cell_size));
+        return std::max(d, 1);
+    };
+
+    grid.dims.x = dim_for_axis(extent.x);
+    grid.dims.y = dim_for_axis(extent.y);
+    grid.dims.z = dim_for_axis(extent.z);
+
+    const int cell_count = grid.dims.x * grid.dims.y * grid.dims.z;
+    grid.cell_heads.assign(cell_count, -1);
+    grid.next.assign(static_cast<int>(particles.size()), -1);
+
+    auto clamp_coord = [](int v, int max_v) {
+        if (v < 0) return 0;
+        if (v >= max_v) return max_v - 1;
+        return v;
+    };
+
+    auto cell_index = [&](int x, int y, int z) {
+        return z * grid.dims.y * grid.dims.x + y * grid.dims.x + x;
+    };
+
+    for (size_t i = 0; i < particles.size(); ++i) {
+        const Particle& p = particles[i];
+        Vec3 rel{p.position.x - grid.origin.x,
+                 p.position.y - grid.origin.y,
+                 p.position.z - grid.origin.z};
+
+        int cx = static_cast<int>(std::floor(rel.x / grid.cell_size));
+        int cy = static_cast<int>(std::floor(rel.y / grid.cell_size));
+        int cz = static_cast<int>(std::floor(rel.z / grid.cell_size));
+
+        cx = clamp_coord(cx, grid.dims.x);
+        cy = clamp_coord(cy, grid.dims.y);
+        cz = clamp_coord(cz, grid.dims.z);
+
+        int idx = cell_index(cx, cy, cz);
+        grid.next[static_cast<int>(i)] = grid.cell_heads[idx];
+        grid.cell_heads[idx] = static_cast<int>(i);
+    }
+}
+
+template <typename Func>
+void for_each_neighbor(const NeighborGrid& grid,
+                       int particle_index,
+                       const std::vector<Particle>& particles,
+                       float radius,
+                       const Func& func) {
+    if (particles.empty()) return;
+
+    const Particle& p = particles[particle_index];
+    float r2_max = radius * radius;
+
+    Vec3 rel{p.position.x - grid.origin.x,
+             p.position.y - grid.origin.y,
+             p.position.z - grid.origin.z};
+
+    int cx = static_cast<int>(std::floor(rel.x / grid.cell_size));
+    int cy = static_cast<int>(std::floor(rel.y / grid.cell_size));
+    int cz = static_cast<int>(std::floor(rel.z / grid.cell_size));
+
+    auto clamp_coord = [](int v, int max_v) {
+        if (v < 0) return 0;
+        if (v >= max_v) return max_v - 1;
+        return v;
+    };
+
+    cx = clamp_coord(cx, grid.dims.x);
+    cy = clamp_coord(cy, grid.dims.y);
+    cz = clamp_coord(cz, grid.dims.z);
+
+    auto cell_index = [&](int x, int y, int z) {
+        return z * grid.dims.y * grid.dims.x + y * grid.dims.x + x;
+    };
+
+    int min_x = std::max(cx - 1, 0);
+    int max_x = std::min(cx + 1, grid.dims.x - 1);
+    int min_y = std::max(cy - 1, 0);
+    int max_y = std::min(cy + 1, grid.dims.y - 1);
+    int min_z = std::max(cz - 1, 0);
+    int max_z = std::min(cz + 1, grid.dims.z - 1);
+
+    for (int z = min_z; z <= max_z; ++z) {
+        for (int y = min_y; y <= max_y; ++y) {
+            for (int x = min_x; x <= max_x; ++x) {
+                int cell = cell_index(x, y, z);
+                int j = grid.cell_heads[cell];
+                while (j != -1) {
+                    Vec3 rij = particles[particle_index].position - particles[j].position;
+                    float r2 = dot(rij, rij);
+                    if (r2 <= r2_max) {
+                        float r = std::sqrt(r2);
+                        func(j, rij, r);
+                    }
+                    j = grid.next[j];
+                }
+            }
+        }
+    }
+}
 }  // namespace
 
 FluidExperiment::FluidExperiment() {
@@ -83,9 +231,12 @@ void FluidExperiment::reset() {
 
 void FluidExperiment::update(float dt) {
     if (settings_.paused) return;
-    // SPH step: compute per-particle densities/pressures, then integrate.
-    compute_sph_densities();
-    integrate_particles(dt);
+    NeighborGrid grid{};
+    build_neighbor_grid(grid, volume_config_, particles_, settings_.kernel_radius);
+
+    // SPH step: compute per-particle densities/pressures, then integrate using neighbor grid.
+    compute_sph_densities(grid);
+    integrate_particles(dt, grid);
 
     // Rebuild density for rendering and stats after integration.
     resplat_density();
@@ -120,7 +271,7 @@ void FluidExperiment::reseed_particles() {
     }
 }
 
-void FluidExperiment::integrate_particles(float dt) {
+void FluidExperiment::integrate_particles(float dt, const NeighborGrid& grid) {
     Vec3 min_bound = volume_config_.origin;
     Vec3 max_bound = volume_extent();
     float floor_y = min_bound.y + settings_.kernel_radius * 0.5f;
@@ -133,49 +284,45 @@ void FluidExperiment::integrate_particles(float dt) {
 
     std::vector<Vec3> forces(n, Vec3{0.0f, 0.0f, 0.0f});
 
-    // Base forces: gravity and simple linear drag.
-    for (size_t i = 0; i < n; ++i) {
+    parallel_for(0, n, [&](size_t i) {
         Vec3 accel{0.0f, settings_.gravity_y, 0.0f};
         Vec3 drag{-kViscosity * particles_[i].velocity.x,
                   -kViscosity * particles_[i].velocity.y,
                   -kViscosity * particles_[i].velocity.z};
         accel = accel + drag;
+
+        float rho_i = densities_[i];
+        float p_i = pressures_[i];
+
+        for_each_neighbor(grid, static_cast<int>(i), particles_, h,
+                          [&](int j, const Vec3& rij, float r) {
+                              if (j == static_cast<int>(i) || r <= 0.0f || r >= h) {
+                                  return;
+                              }
+
+                              float rho_j = densities_[j];
+                              if (rho_i <= 0.0f || rho_j <= 0.0f) {
+                                  return;
+                              }
+
+                              float p_j = pressures_[j];
+                              float p_term = (p_i + p_j) * 0.5f;
+                              if (p_term > 0.0f) {
+                                  Vec3 gradW = spiky_gradient(rij, r, h);
+                                  Vec3 f = gradW * (-p_term / (rho_i * rho_j));
+                                  accel = accel + f;
+                              }
+
+                              Vec3 vel_diff = particles_[j].velocity - particles_[i].velocity;
+                              float lap = visc_laplacian(r, h);
+                              if (lap > 0.0f) {
+                                  Vec3 f_visc = vel_diff * (kSphViscosity * lap / rho_j);
+                                  accel = accel + f_visc;
+                              }
+                          });
+
         forces[i] = accel;
-    }
-
-    // SPH pairwise pressure + viscosity.
-    for (size_t i = 0; i < n; ++i) {
-        for (size_t j = i + 1; j < n; ++j) {
-            Vec3 rij = particles_[i].position - particles_[j].position;
-            float r = length(rij);
-            if (r <= 0.0f || r >= h) continue;
-
-            float rho_i = densities_[i];
-            float rho_j = densities_[j];
-            if (rho_i <= 0.0f || rho_j <= 0.0f) continue;
-
-            // Pressure force (symmetric).
-            float p_i = pressures_[i];
-            float p_j = pressures_[j];
-            float p_term = (p_i + p_j) * 0.5f;
-            if (p_term > 0.0f) {
-                Vec3 gradW = spiky_gradient(rij, r, h);
-                // Scale by inverse densities to reduce sensitivity to absolute density.
-                Vec3 f = gradW * (-p_term / (rho_i * rho_j));
-                forces[i] = forces[i] + f;
-                forces[j] = forces[j] - f;
-            }
-
-            // Viscosity force (symmetric).
-            Vec3 vel_diff = particles_[j].velocity - particles_[i].velocity;
-            float lap = visc_laplacian(r, h);
-            if (lap > 0.0f) {
-                Vec3 f_visc = vel_diff * (kSphViscosity * lap / rho_j);
-                forces[i] = forces[i] + f_visc;
-                forces[j] = forces[j] - f_visc;
-            }
-        }
-    }
+    });
 
     // Integrate and handle bounds.
     for (size_t i = 0; i < n; ++i) {
@@ -223,7 +370,7 @@ void FluidExperiment::integrate_particles(float dt) {
     }
 }
 
-void FluidExperiment::compute_sph_densities() {
+void FluidExperiment::compute_sph_densities(const NeighborGrid& grid) {
     const size_t n = particles_.size();
     densities_.assign(n, 0.0f);
     pressures_.assign(n, 0.0f);
@@ -234,16 +381,19 @@ void FluidExperiment::compute_sph_densities() {
     float h = settings_.kernel_radius;
     if (h <= 0.0f) h = 0.01f;
 
-    // Compute per-particle density using poly6 kernel.
-    for (size_t i = 0; i < n; ++i) {
+    // Compute per-particle density using poly6 kernel in parallel.
+    parallel_for(0, n, [&](size_t i) {
         float rho = 0.0f;
-        for (size_t j = 0; j < n; ++j) {
-            Vec3 rij = particles_[i].position - particles_[j].position;
-            float r = length(rij);
-            rho += particles_[j].mass * poly6_kernel(r, h);
-        }
+        for_each_neighbor(grid, static_cast<int>(i), particles_, h,
+                          [&](int j, const Vec3& rij, float r) {
+                              (void)rij;
+                              rho += particles_[j].mass * poly6_kernel(r, h);
+                          });
         densities_[i] = rho;
-        rest_density_ += rho;
+    });
+
+    for (size_t i = 0; i < n; ++i) {
+        rest_density_ += densities_[i];
     }
 
     rest_density_ /= static_cast<float>(n);
@@ -253,14 +403,14 @@ void FluidExperiment::compute_sph_densities() {
         return;
     }
 
-    // Compute pressures from densities.
-    for (size_t i = 0; i < n; ++i) {
+    // Compute pressures from densities (can be parallel, each index independent).
+    parallel_for(0, n, [&](size_t i) {
         float rho = densities_[i];
         float compression = (rho - rest_density_) / rest_density_;
         pressures_[i] = (compression > 0.0f)
                             ? (kPressureStiffness * compression)
                             : 0.0f;
-    }
+    });
 }
 
 void FluidExperiment::resplat_density() {

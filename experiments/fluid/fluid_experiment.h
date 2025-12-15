@@ -23,6 +23,17 @@ struct FluidStats {
     float avg_height = 0.0f;
 };
 
+// Simple uniform grid to accelerate SPH neighbor queries.
+struct NeighborGrid {
+    Int3 dims{};
+    Vec3 origin{};
+    float cell_size = 0.0f;
+    // For each cell, head index into a singly-linked list of particles (-1 for empty).
+    std::vector<int> cell_heads;
+    // For each particle, index of the next particle in the same cell (-1 for end).
+    std::vector<int> next;
+};
+
 // Lightweight CPU-only prototype of the fluid sim: integrates particles, bounces off bounds, and
 // splats into a density volume. Acts as a driver for the shader-based version.
 class FluidExperiment {
@@ -46,8 +57,8 @@ public:
 private:
     void rebuild_volume();
     void reseed_particles();
-    void integrate_particles(float dt);
-    void compute_sph_densities();
+    void integrate_particles(float dt, const NeighborGrid& grid);
+    void compute_sph_densities(const NeighborGrid& grid);
     void resplat_density();
     void compute_stats();
 
