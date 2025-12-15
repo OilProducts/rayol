@@ -62,7 +62,6 @@ bool FluidRenderer::init(VkPhysicalDevice physical_device, VkDevice device, uint
         return false;
     }
     if (!init_pipelines()) return false;
-    update_descriptors();
     return true;
 }
 
@@ -291,6 +290,10 @@ void FluidRenderer::record_compute(VkCommandBuffer cmd, const FluidExperiment& s
     }
     // Debug spam reduced: layout info is still helpful once.
     log_once("[fluid] density image is ready for compute", logged_compute_start_);
+    if (!update_descriptors()) {
+        log_once("[fluid] Descriptor update failed; compute/draw skipped.", warned_descriptor_);
+        return;
+    }
     // Temporarily rely on CPU density upload for rendering while the GPU splat
     // path is being validated against the SPH CPU sim.
     bool gpu_splat = false;
@@ -299,10 +302,6 @@ void FluidRenderer::record_compute(VkCommandBuffer cmd, const FluidExperiment& s
         size_t particle_capacity = std::max<size_t>(1, sim.particles().size());
         if (!ensure_particle_buffer(particle_capacity)) return;
         write_particles(sim.particles());
-        if (!update_descriptors()) {
-            log_once("[fluid] Descriptor update failed; compute skipped.", warned_descriptor_);
-            gpu_splat = false;
-        }
     }
 
     if (gpu_splat) {
